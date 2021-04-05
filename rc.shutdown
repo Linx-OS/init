@@ -1,0 +1,46 @@
+#!/bin/sh
+# shellcheck disable=1090,1091
+
+. /usr/lib/init/rc.lib
+[ -f /etc/init/rc.conf ] && . /etc/init/rc.conf
+
+run_hook pre.shutdown
+
+command -v sv >/dev/null &&
+    out "Waiting for runit services to stop..."; {
+    sv -w196 force-stop /var/service/* >/dev/null
+    sv exit /var/service/* >/dev/null
+}
+
+command -v svctl >/dev/null &&
+    out "Waiting for sysmgr services to stop..."; {
+    svctl kill /var/sysmgr/* 2>/dev/null
+}
+
+# Save random seed
+random save
+
+out "Sending TERM signal to all processes..."; {
+    killall5 -TERM
+    sleep 1
+}
+
+out "Sending KILL signal to all processes..."; {
+    killall5 -KILL
+}
+
+out "Unmounting filesystems and disabling swap..."; {
+    sync
+    swapoff -a
+    umount -rat nosysfs,noproc,nodevtmpfs,notmpfs
+    run_hook umount
+} 2>&1 | log
+
+out "Remounting rootfs as readonly..."; {
+    mount -o remount,ro /
+    sync
+} 2>&1 | log
+
+run_hook post.shutdown
+
+case "$1" in reboot) shalt -r ;; poweroff) shalt -p; esac
